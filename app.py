@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from html import escape
 from typing import Any
@@ -11,12 +10,22 @@ from typing import Any
 import streamlit as st
 
 from utils import (
+    get_alert_list,
+    get_all_knowledge,
+    get_badcase_list,
+    get_badcase_stats,
+    get_dashboard_stats,
+    get_knowledge_by_kid,
+    init_db,
+    insert_badcase,
+    insert_knowledge,
+    load_config,
+    mark_deprecated,
+    update_badcase,
+    update_knowledge,
     generate_kid,
-    load_badcase_log,
-    load_knowledge_base,
-    save_badcase_log,
-    save_knowledge_base,
 )
+from synchronizer import export_all_active, export_to_sync, get_sync_stats, remove_sync_file
 
 KNOWLEDGE_TYPES = ["规则", "事实", "流程片段", "经验总结"]
 SOURCES = ["内部运营专家经验", "公开社区共识", "官方公告", "AI辅助推测", "数据分析结论"]
@@ -184,6 +193,63 @@ def apply_theme() -> None:
             color: var(--kg-muted);
             text-align: center;
         }
+        .kg-alert {
+            border-radius: 8px;
+            padding: 0.72rem 0.9rem;
+            margin-bottom: 0.6rem;
+            border: 1px solid transparent;
+            font-weight: 650;
+        }
+        .kg-alert-red {
+            color: #991b1b;
+            background: #fef2f2;
+            border-color: #fecaca;
+        }
+        .kg-alert-amber {
+            color: #92400e;
+            background: #fffbeb;
+            border-color: #fde68a;
+        }
+        .kg-alert-blue {
+            color: #1d4ed8;
+            background: #eff6ff;
+            border-color: #bfdbfe;
+        }
+        .kg-flow {
+            background: #ffffff;
+            border: 1px solid var(--kg-border);
+            border-radius: 8px;
+            padding: 1.05rem;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.035);
+        }
+        .kg-flow-line {
+            font-family: Consolas, "Courier New", monospace;
+            white-space: pre;
+            overflow-x: auto;
+            color: var(--kg-text);
+            line-height: 1.65;
+            margin-bottom: 0.9rem;
+        }
+        .kg-flow-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 0.6rem;
+        }
+        .kg-flow-node {
+            border: 1px solid var(--kg-border);
+            border-radius: 8px;
+            padding: 0.72rem;
+            background: #f8fafc;
+        }
+        .kg-flow-node strong {
+            display: block;
+            margin-bottom: 0.28rem;
+        }
+        .kg-flow-node span {
+            color: var(--kg-muted);
+            font-size: 0.86rem;
+            line-height: 1.55;
+        }
         .kg-timeline {
             border-left: 2px solid #dbeafe;
             padding-left: 0.85rem;
@@ -278,6 +344,28 @@ def render_knowledge_card(item: dict[str, Any], include_body: bool = True) -> No
     )
 
 
+def render_alert(message: str, tone: str) -> None:
+    st.markdown(
+        f'<div class="kg-alert kg-alert-{tone}">{escape(message)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def export_to_sync_or_warn(kid: str) -> None:
+    try:
+        export_to_sync(kid)
+    except RuntimeError as exc:
+        st.warning(str(exc))
+
+
+def export_all_active_or_warn() -> int | None:
+    try:
+        return export_all_active()
+    except RuntimeError as exc:
+        st.warning(str(exc))
+        return None
+
+
 def now_iso() -> str:
     return datetime.now(LOCAL_TZ).isoformat(timespec="seconds")
 
@@ -300,65 +388,6 @@ def summarize(text: str, limit: int = 120) -> str:
 
 def get_knowledge_label(item: dict[str, Any]) -> str:
     return f"{item.get('knowledge_id', '')}｜{item.get('title', '')}"
-
-
-def find_knowledge_index(data: list[dict[str, Any]], knowledge_id: str) -> int | None:
-    for index, item in enumerate(data):
-        if item.get("knowledge_id") == knowledge_id:
-            return index
-    return None
-
-
-def increment_version(version: str) -> str:
-    try:
-        return f"{float(version) + 0.1:.1f}"
-    except (TypeError, ValueError):
-        return "1.1"
-
-
-def add_modification_log(item: dict[str, Any], modifier: str, summary: str) -> None:
-    logs = item.setdefault("modification_logs", [])
-    logs.append(
-        {
-            "modified_at": now_iso(),
-            "modifier": modifier.strip() or "未指定",
-            "summary": summary,
-        }
-    )
-    item["updated_at"] = now_iso()
-
-
-def classify_knowledge(data: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    today = date.today()
-    soon = today + timedelta(days=30)
-    expired: list[dict[str, Any]] = []
-    expiring_soon: list[dict[str, Any]] = []
-    owner_missing: list[dict[str, Any]] = []
-    pending_verify: list[dict[str, Any]] = []
-
-    for item in data:
-        expiry_date = parse_date(item.get("expiry_date"))
-        effective_date = parse_date(item.get("effective_date"))
-        status = item.get("status", "")
-        owner = str(item.get("owner", "")).strip()
-        if expiry_date and expiry_date < today and status != "已作废":
-            expired.append(item)
-        if expiry_date and today <= expiry_date <= soon and status != "已作废":
-            expiring_soon.append(item)
-        if not owner or owner == "未指定":
-            owner_missing.append(item)
-        if (
-            item.get("trust_rating") == "低置信度待验证"
-            and effective_date
-            and effective_date <= today - timedelta(days=30)
-        ):
-            pending_verify.append(item)
-    return {
-        "expired": expired,
-        "expiring_soon": expiring_soon,
-        "owner_missing": owner_missing,
-        "pending_verify": pending_verify,
-    }
 
 
 def render_knowledge_list(items: list[dict[str, Any]]) -> None:
@@ -404,28 +433,27 @@ def page_register() -> None:
         if not title.strip() or not content.strip():
             st.error("知识标题和知识内容不能为空。")
             return
-        data = load_knowledge_base()
         new_item = {
-            "knowledge_id": generate_kid(),
+            "kid": generate_kid(),
             "title": title.strip(),
             "content": content.strip(),
-            "knowledge_type": knowledge_type,
+            "type": knowledge_type,
             "creator": creator.strip(),
             "owner": owner.strip(),
             "approver": approver.strip(),
             "effective_date": effective_date.isoformat(),
             "expiry_date": expiry_date.isoformat() if has_expiry else "",
             "source": source,
-            "trust_rating": trust_rating,
+            "confidence": trust_rating,
             "version": "1.0",
             "scope": scope.strip(),
             "status": "生效中",
             "created_at": now_iso(),
             "updated_at": now_iso(),
-            "modification_logs": [],
+            "changelog": [],
         }
-        data.append(new_item)
-        save_knowledge_base(data)
+        insert_knowledge(new_item)
+        export_to_sync_or_warn(new_item["kid"])
         st.success("知识单元已成功注册")
 
 
@@ -435,15 +463,28 @@ def page_dashboard() -> None:
         "集中观察过期、责任缺失、低置信度和即将失效的知识风险。",
         "质量总览",
     )
-    data = load_knowledge_base()
-    classified = classify_knowledge(data)
+    stats = get_dashboard_stats()
+    classified = get_alert_list()
+    config = load_config()
+    pending_verify_threshold = int(config.get("pending_verify_threshold", "0") or 0)
+
+    if stats["owner_missing"] > 0:
+        render_alert(f"存在{stats['owner_missing']}条无责任人的知识单元，无法追溯责任归属", "red")
+    if stats["expired"] > 0:
+        render_alert(f"存在{stats['expired']}条已过期但未作废的知识单元", "red")
+    if stats["expiring_soon"] > 0:
+        render_alert(f"有{stats['expiring_soon']}条知识将在30天内过期，请及时复核并更新", "amber")
+    if stats["pending_verify"] > pending_verify_threshold:
+        render_alert(f"有{stats['pending_verify']}条长期未审核的待验证知识", "amber")
+    if stats["recent_new"] > 0:
+        render_alert(f"最近7天内新增{stats['recent_new']}条知识单元", "blue")
 
     metrics = [
-        ("知识总量", len(data), "all"),
-        ("已过期知识数量", len(classified["expired"]), "expired"),
-        ("即将过期知识数量", len(classified["expiring_soon"]), "expiring_soon"),
-        ("无责任人的知识数量", len(classified["owner_missing"]), "owner_missing"),
-        ("待验证知识数量", len(classified["pending_verify"]), "pending_verify"),
+        ("知识总量", stats["total"], "all"),
+        ("已过期知识数量", stats["expired"], "expired"),
+        ("即将过期知识数量", stats["expiring_soon"], "expiring_soon"),
+        ("无责任人的知识数量", stats["owner_missing"], "owner_missing"),
+        ("待验证知识数量", stats["pending_verify"], "pending_verify"),
     ]
     columns = st.columns(len(metrics))
     for column, (label, value, filter_name) in zip(columns, metrics):
@@ -477,8 +518,7 @@ def page_knowledge_list() -> None:
         "从仪表盘钻取到具体知识项，快速定位需要治理的对象。",
         "清单视图",
     )
-    data = load_knowledge_base()
-    classified = classify_knowledge(data)
+    classified = get_alert_list()
     filter_options = {
         "all": "全部知识",
         "expired": "已过期知识",
@@ -493,12 +533,12 @@ def page_knowledge_list() -> None:
         format_func=lambda value: filter_options[value],
     )
     st.session_state["knowledge_filter"] = selected_filter
-    items = data if selected_filter == "all" else classified[selected_filter]
+    items = get_all_knowledge({}) if selected_filter == "all" else classified[selected_filter]
     st.caption(f"当前筛选：{filter_options[selected_filter]}｜共 {len(items)} 条")
     render_knowledge_list(items)
 
 
-def render_update_form(item: dict[str, Any], item_index: int, data: list[dict[str, Any]], prefix: str) -> None:
+def render_update_form(item: dict[str, Any], prefix: str, context_summary: str = "更新知识内容与治理字段") -> None:
     with st.form(f"{prefix}_update_form"):
         new_content = st.text_area("知识内容", value=item.get("content", ""), height=160)
         new_approver = st.text_input("审批人", value=item.get("approver", ""))
@@ -513,26 +553,23 @@ def render_update_form(item: dict[str, Any], item_index: int, data: list[dict[st
         modifier = st.text_input("修改人", value=item.get("owner", ""))
         submitted = st.form_submit_button("确认更新", type="primary")
     if submitted:
-        previous_snapshot = {
-            "version": item.get("version"),
-            "content_summary": summarize(item.get("content", "")),
-            "approver": item.get("approver", ""),
-            "trust_rating": item.get("trust_rating", ""),
-            "expiry_date": item.get("expiry_date", ""),
-        }
-        item["content"] = new_content.strip()
-        item["approver"] = new_approver.strip()
-        item["trust_rating"] = new_trust
-        item["expiry_date"] = new_expiry.isoformat() if has_expiry else ""
-        item["version"] = increment_version(str(item.get("version", "1.0")))
-        add_modification_log(item, modifier, f"更新知识内容与治理字段；旧版本归档：{previous_snapshot}")
-        data[item_index] = item
-        save_knowledge_base(data)
+        update_knowledge(
+            item.get("kid") or item.get("knowledge_id", ""),
+            {
+                "content": new_content.strip(),
+                "approver": new_approver.strip(),
+                "confidence": new_trust,
+                "expiry_date": new_expiry.isoformat() if has_expiry else "",
+                "modifier": modifier,
+                "changelog_summary": context_summary,
+            },
+        )
+        export_to_sync_or_warn(item.get("kid") or item.get("knowledge_id", ""))
         st.success("知识单元已更新，版本号已自动递增。")
         st.rerun()
 
 
-def render_trust_form(item: dict[str, Any], item_index: int, data: list[dict[str, Any]], prefix: str) -> None:
+def render_trust_form(item: dict[str, Any], prefix: str) -> None:
     with st.form(f"{prefix}_trust_form"):
         new_trust = st.selectbox(
             "新的信任度评级",
@@ -543,15 +580,20 @@ def render_trust_form(item: dict[str, Any], item_index: int, data: list[dict[str
         submitted = st.form_submit_button("确认修正信任度")
     if submitted:
         old_trust = item.get("trust_rating", "")
-        item["trust_rating"] = new_trust
-        add_modification_log(item, modifier, f"信任度评级由“{old_trust}”修正为“{new_trust}”；版本号不变")
-        data[item_index] = item
-        save_knowledge_base(data)
+        update_knowledge(
+            item.get("kid") or item.get("knowledge_id", ""),
+            {
+                "confidence": new_trust,
+                "modifier": modifier,
+                "changelog_summary": f"信任度评级由“{old_trust}”修正为“{new_trust}”",
+            },
+        )
+        export_to_sync_or_warn(item.get("kid") or item.get("knowledge_id", ""))
         st.success("信任度评级已修正。")
         st.rerun()
 
 
-def render_responsibility_detail(item: dict[str, Any], item_index: int, data: list[dict[str, Any]], prefix: str) -> None:
+def render_responsibility_detail(item: dict[str, Any], prefix: str) -> None:
     render_knowledge_card(item)
     detail_col_1, detail_col_2, detail_col_3 = st.columns(3)
     detail_col_1.markdown(
@@ -584,6 +626,25 @@ def render_responsibility_detail(item: dict[str, Any], item_index: int, data: li
         else:
             st.info("暂无修改日志。")
 
+    render_section_title("最近引用记录")
+    references = item.get("recent_references") or []
+    if references:
+        for reference in references:
+            st.markdown(
+                f"""
+                <div class="kg-card">
+                    <div class="kg-card-title">{escape(str(reference.get('referenced_at') or ''))}</div>
+                    <div class="kg-card-meta">
+                        报告ID：{escape(str(reference.get('report_id') or '无'))}｜
+                        来源：{escape(str(reference.get('source') or '未指定'))}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    else:
+        st.info("暂无引用记录")
+
     render_section_title("修正操作")
     action = st.radio("选择操作", ["作废", "更新", "修正信任度评级"], horizontal=True, key=f"{prefix}_action")
     if action == "作废":
@@ -595,16 +656,15 @@ def render_responsibility_detail(item: dict[str, Any], item_index: int, data: li
             if not confirmed:
                 st.warning("请先勾选二次确认。")
                 return
-            item["status"] = "已作废"
-            add_modification_log(item, modifier, "知识状态标记为已作废")
-            data[item_index] = item
-            save_knowledge_base(data)
+            kid = item.get("kid") or item.get("knowledge_id", "")
+            mark_deprecated(kid)
+            remove_sync_file(kid)
             st.success("知识单元已作废。")
             st.rerun()
     elif action == "更新":
-        render_update_form(item, item_index, data, prefix)
+        render_update_form(item, prefix)
     else:
-        render_trust_form(item, item_index, data, prefix)
+        render_trust_form(item, prefix)
 
 
 def page_trace() -> None:
@@ -613,7 +673,7 @@ def page_trace() -> None:
         "搜索知识项，查看责任链、版本记录，并在同一工作台完成作废、更新或信任度修正。",
         "追溯工作台",
     )
-    data = load_knowledge_base()
+    data = get_all_knowledge({})
     query = st.text_input(
         "按知识ID或关键词搜索",
         value=st.session_state.pop("trace_query", ""),
@@ -636,9 +696,9 @@ def page_trace() -> None:
             if st.button("查看责任详情", key=f"{prefix}_detail"):
                 st.session_state[f"{prefix}_show_detail"] = True
             if st.session_state.get(f"{prefix}_show_detail"):
-                item_index = find_knowledge_index(data, item.get("knowledge_id", ""))
-                if item_index is not None:
-                    render_responsibility_detail(item, item_index, data, prefix)
+                detail = get_knowledge_by_kid(item.get("kid") or item.get("knowledge_id", ""))
+                if detail is not None:
+                    render_responsibility_detail(detail, prefix)
 
 
 def page_badcase() -> None:
@@ -647,8 +707,8 @@ def page_badcase() -> None:
         "把错误案例回流到知识治理链路，暴露高频出错知识并推动修正闭环。",
         "反馈闭环",
     )
-    data = load_knowledge_base()
-    badcases = load_badcase_log()
+    data = get_all_knowledge({})
+    badcases = get_badcase_list(None)
     knowledge_options = [item.get("knowledge_id", "") for item in data]
     labels = {item.get("knowledge_id", ""): get_knowledge_label(item) for item in data}
     if not knowledge_options:
@@ -675,31 +735,25 @@ def page_badcase() -> None:
         if not related_id or not description.strip():
             st.error("关联知识ID和错误描述不能为空。")
         else:
-            badcases.append(
+            insert_badcase(
                 {
-                    "badcase_id": f"BC-{datetime.now(LOCAL_TZ).strftime('%Y%m%d%H%M%S')}-{len(badcases) + 1:03d}",
                     "related_knowledge_id": related_id,
                     "description": description.strip(),
                     "error_level": error_level,
                     "discovery_source": discovery_source,
                     "reporter": reporter.strip(),
                     "status": "待审核",
-                    "reject_reason": "",
-                    "submitted_at": now_iso(),
-                    "reviewed_at": "",
-                    "reviewer": "",
                 }
             )
-            save_badcase_log(badcases)
             st.success("Badcase已提交。")
             st.rerun()
 
-    pending = [item for item in badcases if item.get("status") == "待审核"]
-    level_counter = Counter(item.get("error_level", "未指定") for item in badcases)
-    knowledge_counter = Counter(item.get("related_knowledge_id", "未关联") for item in badcases)
+    badcase_stats = get_badcase_stats()
+    level_counter = badcase_stats["by_severity"]
+    knowledge_counter = badcase_stats["by_knowledge"]
 
     with board_col:
-        st.metric("未处理Badcase数量", len(pending))
+        st.metric("未处理Badcase数量", badcase_stats["pending_count"])
         st.write("**按错误等级分布**")
         if level_counter:
             st.bar_chart(dict(level_counter), horizontal=True)
@@ -707,7 +761,7 @@ def page_badcase() -> None:
             st.caption("暂无错误等级数据")
         st.write("**高频关联知识**")
         if knowledge_counter:
-            st.bar_chart(dict(knowledge_counter.most_common(8)), horizontal=True)
+            st.bar_chart(dict(list(knowledge_counter.items())[:8]), horizontal=True)
         else:
             st.caption("暂无关联知识数据")
 
@@ -751,40 +805,192 @@ def page_badcase() -> None:
                 )
                 if decision == "确认成立并修正":
                     reviewer = st.text_input("审核人", key=f"{prefix}_reviewer")
-                    if st.button("进入知识修正", key=f"{prefix}_confirm"):
-                        badcase["status"] = "确认成立"
-                        badcase["reviewed_at"] = now_iso()
-                        badcase["reviewer"] = reviewer.strip()
-                        save_badcase_log(badcases)
-                        st.session_state["trace_query"] = badcase.get("related_knowledge_id", "")
-                        st.session_state["page"] = "责任归属与错误追溯工作台"
-                        st.success("Badcase已确认，请在追溯工作台完成知识修正。")
-                        st.rerun()
+                    if st.button("确认并修正", key=f"{prefix}_confirm"):
+                        st.session_state[f"{prefix}_show_fix_form"] = True
+                    if st.session_state.get(f"{prefix}_show_fix_form"):
+                        related_kid = badcase.get("related_knowledge_id", "")
+                        related_knowledge = get_knowledge_by_kid(related_kid)
+                        if related_knowledge is None:
+                            st.error("未找到关联知识单元，无法修正。")
+                        else:
+                            st.caption(
+                                f"关联知识ID：{related_kid}｜Badcase描述：{badcase.get('description')}"
+                            )
+                            with st.form(f"{prefix}_inline_fix_form"):
+                                fixed_content = st.text_area(
+                                    "知识内容",
+                                    value=related_knowledge.get("content", ""),
+                                    height=160,
+                                )
+                                fixed_approver = st.text_input(
+                                    "审批人",
+                                    value=related_knowledge.get("approver", ""),
+                                )
+                                fixed_trust = st.selectbox(
+                                    "信任度评级",
+                                    TRUST_RATINGS,
+                                    index=TRUST_RATINGS.index(related_knowledge.get("trust_rating"))
+                                    if related_knowledge.get("trust_rating") in TRUST_RATINGS
+                                    else 0,
+                                )
+                                has_expiry = st.checkbox(
+                                    "设置失效日期",
+                                    value=bool(related_knowledge.get("expiry_date")),
+                                    key=f"{prefix}_inline_has_expiry",
+                                )
+                                current_expiry = parse_date(related_knowledge.get("expiry_date")) or date.today()
+                                fixed_expiry = st.date_input(
+                                    "失效日期",
+                                    value=current_expiry,
+                                    disabled=not has_expiry,
+                                )
+                                fixed = st.form_submit_button("确认修正", type="primary")
+                            if fixed:
+                                badcase_no = badcase.get("badcase_id") or f"BC-{badcase.get('id')}"
+                                update_knowledge(
+                                    related_kid,
+                                    {
+                                        "content": fixed_content.strip(),
+                                        "approver": fixed_approver.strip(),
+                                        "confidence": fixed_trust,
+                                        "expiry_date": fixed_expiry.isoformat() if has_expiry else "",
+                                        "modifier": reviewer.strip() or "未指定",
+                                        "changelog_summary": (
+                                            f"触发来源：Badcase回流，Badcase编号：{badcase_no}；"
+                                            f"错误描述：{badcase.get('description')}"
+                                        ),
+                                    },
+                                )
+                                export_to_sync_or_warn(related_kid)
+                                update_badcase(
+                                    int(badcase.get("id")),
+                                    {
+                                        "status": "已修正",
+                                        "reviewer_note": reviewer.strip() or "未指定",
+                                        "resolved_at": now_iso(),
+                                    },
+                                )
+                                st.success("知识单元已修正，Badcase已标记为已修正。")
+                                st.rerun()
                 else:
                     with st.form(f"{prefix}_reject_form"):
                         reviewer = st.text_input("审核人")
                         reason = st.text_area("驳回理由")
                         rejected = st.form_submit_button("确认驳回")
                     if rejected:
-                        badcase["status"] = "已驳回"
-                        badcase["reject_reason"] = reason.strip()
-                        badcase["reviewed_at"] = now_iso()
-                        badcase["reviewer"] = reviewer.strip()
-                        save_badcase_log(badcases)
+                        note = f"{reviewer.strip() or '未指定'}：{reason.strip()}"
+                        update_badcase(
+                            int(badcase.get("id")),
+                            {
+                                "status": "已驳回",
+                                "reviewer_note": note,
+                                "resolved_at": now_iso(),
+                            },
+                        )
                         st.success("Badcase已驳回。")
                         st.rerun()
 
 
+def page_home() -> None:
+    render_page_header(
+        "知识治理控制台",
+        "把知识生产、调用、错误发现和修正回流放在同一个治理闭环里。",
+        "首页",
+    )
+    flow_nodes = [
+        ("知识注册", "定义知识单元，标注责任人、来源和信任度"),
+        ("审核生效", "审批通过后进入可调用状态"),
+        ("Agent调用", "下游Agent基于知识库进行分析决策"),
+        ("分析报告输出", "每条结论附带知识溯源信息"),
+        ("报告错误发现", "运营复核或社区反馈发现错误"),
+        ("Badcase回流", "提报错误并关联知识ID"),
+        ("知识修正", "更新知识内容或调整信任度"),
+    ]
+    node_cards = "".join(
+        f"""
+        <div class="kg-flow-node">
+            <strong>{escape(title)}</strong>
+            <span>{escape(description)}</span>
+        </div>
+        """
+        for title, description in flow_nodes
+    )
+    st.markdown(
+        f"""
+        <div class="kg-flow">
+            <div class="kg-flow-line">知识注册 → 审核生效 → Agent调用 → 分析报告输出
+                ↑                      ↓
+                └── 知识修正 ← Badcase回流 ← 报告错误发现</div>
+            <div class="kg-flow-grid">{node_cards}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    render_section_title("系统定位")
+    st.markdown(
+        """
+        <div class="kg-card">
+            <div class="kg-card-body">
+                知识治理控制台是知识库的生产者和管理者，下游Agent是知识库的消费者。
+                两者通过知识库的标准接口产生联系，控制台生产数据，Agent消费数据。
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def page_sync_management() -> None:
+    render_page_header(
+        "同步管理",
+        "将当前治理后的结构化知识转译为 YAML 文件，供下游 Agent 索引脚本读取。",
+        "YAML同步",
+    )
+    stats = get_sync_stats()
+    col_1, col_2 = st.columns(2)
+    col_1.metric("已同步YAML文件", stats["file_count"])
+    col_2.metric("最近修改时间", stats["last_modified"] or "暂无")
+
+    st.info("导出格式为YAML，与Agent端的配置化体系兼容。每条知识导出为一个独立的 .yaml 文件。")
+    st.caption(
+        "将当前所有生效知识导出为YAML文件，存放在 sync/ 文件夹中。"
+        "Agent的知识库索引脚本可直接读取这些YAML文件来更新向量数据库。"
+    )
+    if st.button("导出全部生效知识", type="primary"):
+        exported_count = export_all_active_or_warn()
+        if exported_count is not None:
+            st.success(f"已导出 {exported_count} 个YAML文件。")
+            st.rerun()
+
+    render_section_title("设计意图")
+    st.markdown(
+        """
+        <div class="kg-card">
+            <div class="kg-card-body">
+                控制台将结构化知识单元转译为YAML文件，格式与Agent配置体系一致。
+                控制台不调用ChromaDB，不修改Agent代码。Agent端的索引脚本只需要扫描
+                sync/ 文件夹中的YAML文件，即可将知识单元向量化并存入ChromaDB。
+                双方通过 sync/ 文件夹和YAML格式实现松耦合衔接。
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title="知识治理控制台", layout="wide")
+    init_db()
     apply_theme()
 
     pages = [
+        "首页",
         "知识单元注册中心",
         "知识库健康度仪表盘",
         "知识清单",
         "责任归属与错误追溯工作台",
         "Badcase回流",
+        "同步管理",
     ]
     default_page = st.session_state.get("page", pages[0])
     st.sidebar.markdown("### 知识治理控制台")
@@ -793,9 +999,11 @@ def main() -> None:
     st.session_state["page"] = selected_page
     st.sidebar.divider()
     st.sidebar.caption("数据文件")
-    st.sidebar.code("data/knowledge_base.json\ndata/badcase_log.json", language="text")
+    st.sidebar.code("data/knowledge_base.db", language="text")
 
-    if selected_page == "知识单元注册中心":
+    if selected_page == "首页":
+        page_home()
+    elif selected_page == "知识单元注册中心":
         page_register()
     elif selected_page == "知识库健康度仪表盘":
         page_dashboard()
@@ -803,6 +1011,8 @@ def main() -> None:
         page_knowledge_list()
     elif selected_page == "责任归属与错误追溯工作台":
         page_trace()
+    elif selected_page == "同步管理":
+        page_sync_management()
     else:
         page_badcase()
 

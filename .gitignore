@@ -5,3 +5,6 @@ __pycache__/
 .env
 .venv/
 app.py.bak-*
+build/
+dist/
+*.spec
