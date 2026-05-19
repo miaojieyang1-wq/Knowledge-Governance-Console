@@ -354,14 +354,14 @@ def render_alert(message: str, tone: str) -> None:
 def export_to_sync_or_warn(kid: str) -> None:
     try:
         export_to_sync(kid)
-    except RuntimeError as exc:
+    except (RuntimeError, OSError, ValueError) as exc:
         st.warning(str(exc))
 
 
 def export_all_active_or_warn() -> int | None:
     try:
         return export_all_active()
-    except RuntimeError as exc:
+    except (RuntimeError, OSError, ValueError) as exc:
         st.warning(str(exc))
         return None
 
