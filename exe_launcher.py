@@ -8,12 +8,31 @@ import subprocess
 import sys
 import time
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8501
 STARTUP_TIMEOUT_SECONDS = 30
+ERROR_EXIT_DELAY_SECONDS = 12
+
+
+def write_log(root: Path, message: str) -> None:
+    log_path = root / "launcher.log"
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    try:
+        with log_path.open("a", encoding="utf-8", newline="\n") as file_obj:
+            file_obj.write(f"[{timestamp}] {message}\n")
+    except OSError:
+        pass
+
+
+def show_error(root: Path, message: str) -> None:
+    print(f"[ERROR] {message}")
+    write_log(root, f"ERROR {message}")
+    print(f"This window will close in {ERROR_EXIT_DELAY_SECONDS} seconds.")
+    time.sleep(ERROR_EXIT_DELAY_SECONDS)
 
 
 def find_project_root() -> Path:
@@ -71,22 +90,24 @@ def main() -> int:
     root = find_project_root()
     config = read_simple_config(root)
     host = config.get("launch_host", DEFAULT_HOST)
-    preferred_port = int(config.get("launch_port", str(DEFAULT_PORT)) or DEFAULT_PORT)
-    port = choose_port(host, preferred_port)
+    try:
+        preferred_port = int(config.get("launch_port", str(DEFAULT_PORT)) or DEFAULT_PORT)
+        port = choose_port(host, preferred_port)
+    except (RuntimeError, ValueError) as exc:
+        show_error(root, str(exc))
+        return 1
     python_exe = root / "streamlit-ai-app-py-requirements-txt" / ".venv" / "Scripts" / "python.exe"
     app_file = root / "app.py"
 
     if not app_file.exists():
-        print(f"[ERROR] Cannot find app.py in: {root}")
-        input("Press Enter to exit...")
+        show_error(root, f"Cannot find app.py in: {root}")
         return 1
     if not python_exe.exists():
-        print("[ERROR] Cannot find project Python runtime:")
-        print(str(python_exe))
-        input("Press Enter to exit...")
+        show_error(root, f"Cannot find project Python runtime: {python_exe}")
         return 1
 
     url = f"http://{host}:{port}"
+    write_log(root, f"Starting server at {url}")
     print("Starting Knowledge Governance Console...")
     print(f"URL: {url}")
     if port != preferred_port:
@@ -114,13 +135,20 @@ def main() -> int:
     try:
         if wait_for_port(host, port, STARTUP_TIMEOUT_SECONDS):
             webbrowser.open(url)
+            write_log(root, f"Server ready at {url}")
         else:
             print(f"[WARN] Server did not respond within {STARTUP_TIMEOUT_SECONDS} seconds.")
             print("If Streamlit is still starting, open the URL manually later.")
+            write_log(root, f"WARN server not ready after {STARTUP_TIMEOUT_SECONDS} seconds")
         return process.wait()
     except KeyboardInterrupt:
         print("\nConsole stopped.")
+        write_log(root, "Console stopped by user")
         process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
         return 0
 
 
