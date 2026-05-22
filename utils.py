@@ -206,7 +206,63 @@ def init_db() -> None:
             )
             """
         )
+        _ensure_schema_columns(connection)
         _seed_example(connection)
+
+
+def _ensure_schema_columns(connection: sqlite3.Connection) -> None:
+    knowledge_column_definitions = {
+        "title": "TEXT NOT NULL DEFAULT ''",
+        "content": "TEXT NOT NULL DEFAULT ''",
+        "type": "TEXT NOT NULL DEFAULT ''",
+        "creator": "TEXT DEFAULT ''",
+        "owner": "TEXT DEFAULT ''",
+        "approver": "TEXT DEFAULT ''",
+        "effective_date": "TEXT DEFAULT ''",
+        "expiry_date": "TEXT DEFAULT ''",
+        "source": "TEXT DEFAULT ''",
+        "confidence": "TEXT DEFAULT ''",
+        "version": "TEXT DEFAULT '1.0'",
+        "scope": "TEXT DEFAULT ''",
+        "status": "TEXT DEFAULT '生效中'",
+        "created_at": "TEXT DEFAULT ''",
+        "updated_at": "TEXT DEFAULT ''",
+        "changelog": "TEXT NOT NULL DEFAULT '[]'",
+    }
+    badcase_column_definitions = {
+        "kid": "TEXT DEFAULT ''",
+        "description": "TEXT NOT NULL DEFAULT ''",
+        "severity": "TEXT DEFAULT ''",
+        "source": "TEXT DEFAULT ''",
+        "reporter": "TEXT DEFAULT ''",
+        "status": "TEXT DEFAULT '待审核'",
+        "reviewer_note": "TEXT DEFAULT ''",
+        "created_at": "TEXT DEFAULT ''",
+        "resolved_at": "TEXT DEFAULT ''",
+    }
+    reference_column_definitions = {
+        "kid": "TEXT NOT NULL DEFAULT ''",
+        "referenced_at": "TEXT NOT NULL DEFAULT ''",
+        "report_id": "TEXT DEFAULT ''",
+        "source": "TEXT DEFAULT ''",
+    }
+    for column_name, column_definition in knowledge_column_definitions.items():
+        _ensure_column(connection, "knowledge_units", column_name, column_definition)
+    for column_name, column_definition in badcase_column_definitions.items():
+        _ensure_column(connection, "badcase_log", column_name, column_definition)
+    for column_name, column_definition in reference_column_definitions.items():
+        _ensure_column(connection, "reference_log", column_name, column_definition)
+
+
+def _ensure_column(connection: sqlite3.Connection, table_name: str, column_name: str, column_definition: str) -> None:
+    if not table_name.replace("_", "").isalnum() or not column_name.replace("_", "").isalnum():
+        raise ValueError("Invalid SQLite identifier")
+    existing_columns = {
+        row["name"]
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in existing_columns:
+        connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
 
 
 def _seed_example(connection: sqlite3.Connection) -> None:
@@ -317,6 +373,11 @@ def get_all_knowledge(filters: dict[str, Any] | None = None) -> list[dict[str, A
             operator = "<="
         clauses.append(f"expiry_date != '' AND expiry_date {operator} ?")
         params.append(expiry_date)
+    search = str(filters.get("search", "")).strip()
+    if search:
+        clauses.append("(kid LIKE ? OR title LIKE ? OR content LIKE ?)")
+        search_like = f"%{search}%"
+        params.extend([search_like, search_like, search_like])
     where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     sort_by = filters.get("sort_by", "updated_at")
     if sort_by not in KNOWLEDGE_COLUMNS:
@@ -496,7 +557,7 @@ def insert_badcase(data: dict[str, Any]) -> None:
 def get_badcase_list(status_filter: str | None = None) -> list[dict[str, Any]]:
     sql = "SELECT * FROM badcase_log"
     params: list[Any] = []
-    if status_filter:
+    if status_filter and status_filter != "全部":
         sql += " WHERE status = ?"
         params.append(status_filter)
     sql += " ORDER BY created_at DESC, id DESC"

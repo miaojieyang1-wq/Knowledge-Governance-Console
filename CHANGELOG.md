@@ -6,3 +6,9 @@
 - Added YAML synchronization exports under `sync/` for Agent-side indexing.
 - Added dashboard alerts, reference trace display, and inline Badcase correction flow.
 - Removed obsolete in-app helper code left from the earlier JSON implementation.
+
+## 2026-05-22
+
+- Added repeatable `selfcheck.py` and `run_selfcheck.bat` smoke checks.
+- Hardened SQLite schema initialization for older local database files.
+- Improved query filtering and Badcase status list compatibility.

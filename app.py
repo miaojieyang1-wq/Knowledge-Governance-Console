@@ -673,21 +673,13 @@ def page_trace() -> None:
         "搜索知识项，查看责任链、版本记录，并在同一工作台完成作废、更新或信任度修正。",
         "追溯工作台",
     )
-    data = get_all_knowledge({})
+    data = get_all_knowledge({"search": st.session_state.get("trace_query", "")})
     query = st.text_input(
         "按知识ID或关键词搜索",
         value=st.session_state.pop("trace_query", ""),
         placeholder="输入 KID、标题关键词或内容关键词",
     )
-    lowered_query = query.strip().lower()
-    results = [
-        item
-        for item in data
-        if not lowered_query
-        or lowered_query in str(item.get("knowledge_id", "")).lower()
-        or lowered_query in str(item.get("title", "")).lower()
-        or lowered_query in str(item.get("content", "")).lower()
-    ]
+    results = get_all_knowledge({"search": query.strip()}) if query.strip() else data
     st.caption(f"找到 {len(results)} 条匹配知识")
     for item in results:
         prefix = f"trace_{item.get('knowledge_id')}"

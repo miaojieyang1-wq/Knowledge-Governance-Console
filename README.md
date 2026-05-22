@@ -29,3 +29,13 @@ Windows 本地也可以直接双击 `KnowledgeGovernanceConsole.exe`，或双击
 ## 同步转译
 
 控制台只负责将 SQLite 中的结构化知识单元转译为 YAML 文件，不调用 ChromaDB，也不修改 Agent 代码。下游 Agent 的索引脚本可扫描 `sync/` 文件夹中的 `.yaml` 文件并自行完成向量化。
+
+## 自检
+
+运行快速冒烟测试：
+
+```powershell
+python selfcheck.py
+```
+
+Windows 本地也可以双击 `run_selfcheck.bat`。自检会在临时目录创建隔离数据库和同步目录，不会修改正式数据。
