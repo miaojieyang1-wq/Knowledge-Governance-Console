@@ -4,3 +4,4 @@ pending_verify_threshold: 0
 sync_dir: sync
 launch_host: 127.0.0.1
 launch_port: 8501
+launch_timeout_seconds: 30

@@ -12,3 +12,6 @@
 - Added repeatable `selfcheck.py` and `run_selfcheck.bat` smoke checks.
 - Hardened SQLite schema initialization for older local database files.
 - Improved query filtering and Badcase status list compatibility.
+- Split dense Streamlit page handlers into smaller rendering helpers for safer UI iteration.
+- Added `docs/decisions.md` to document the console, SQLite, YAML sync, and Windows launcher boundaries.
+- Made the Windows launcher startup wait timeout configurable through `config.yaml`.

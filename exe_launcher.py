@@ -14,7 +14,7 @@ from pathlib import Path
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8501
-STARTUP_TIMEOUT_SECONDS = 30
+DEFAULT_STARTUP_TIMEOUT_SECONDS = 30
 ERROR_EXIT_DELAY_SECONDS = 12
 
 
@@ -58,6 +58,14 @@ def read_simple_config(root: Path) -> dict[str, str]:
     return config
 
 
+def parse_config_int(config: dict[str, str], key: str, default: int) -> int:
+    raw_value = config.get(key, str(default)) or str(default)
+    try:
+        return int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid integer config value for {key}: {raw_value}") from exc
+
+
 def is_port_available(host: str, port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -91,7 +99,8 @@ def main() -> int:
     config = read_simple_config(root)
     host = config.get("launch_host", DEFAULT_HOST)
     try:
-        preferred_port = int(config.get("launch_port", str(DEFAULT_PORT)) or DEFAULT_PORT)
+        preferred_port = parse_config_int(config, "launch_port", DEFAULT_PORT)
+        startup_timeout = parse_config_int(config, "launch_timeout_seconds", DEFAULT_STARTUP_TIMEOUT_SECONDS)
         port = choose_port(host, preferred_port)
     except (RuntimeError, ValueError) as exc:
         show_error(root, str(exc))
@@ -133,13 +142,13 @@ def main() -> int:
     ]
     process = subprocess.Popen(command, cwd=root)
     try:
-        if wait_for_port(host, port, STARTUP_TIMEOUT_SECONDS):
+        if wait_for_port(host, port, startup_timeout):
             webbrowser.open(url)
             write_log(root, f"Server ready at {url}")
         else:
-            print(f"[WARN] Server did not respond within {STARTUP_TIMEOUT_SECONDS} seconds.")
+            print(f"[WARN] Server did not respond within {startup_timeout} seconds.")
             print("If Streamlit is still starting, open the URL manually later.")
-            write_log(root, f"WARN server not ready after {STARTUP_TIMEOUT_SECONDS} seconds")
+            write_log(root, f"WARN server not ready after {startup_timeout} seconds")
         return process.wait()
     except KeyboardInterrupt:
         print("\nConsole stopped.")

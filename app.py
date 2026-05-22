@@ -457,17 +457,7 @@ def page_register() -> None:
         st.success("知识单元已成功注册")
 
 
-def page_dashboard() -> None:
-    render_page_header(
-        "知识库健康度仪表盘",
-        "集中观察过期、责任缺失、低置信度和即将失效的知识风险。",
-        "质量总览",
-    )
-    stats = get_dashboard_stats()
-    classified = get_alert_list()
-    config = load_config()
-    pending_verify_threshold = int(config.get("pending_verify_threshold", "0") or 0)
-
+def render_dashboard_alerts(stats: dict[str, Any], pending_verify_threshold: int) -> None:
     if stats["owner_missing"] > 0:
         render_alert(f"存在{stats['owner_missing']}条无责任人的知识单元，无法追溯责任归属", "red")
     if stats["expired"] > 0:
@@ -479,6 +469,8 @@ def page_dashboard() -> None:
     if stats["recent_new"] > 0:
         render_alert(f"最近7天内新增{stats['recent_new']}条知识单元", "blue")
 
+
+def render_dashboard_metrics(stats: dict[str, Any]) -> None:
     metrics = [
         ("知识总量", stats["total"], "all"),
         ("已过期知识数量", stats["expired"], "expired"),
@@ -495,6 +487,8 @@ def page_dashboard() -> None:
                 st.session_state["page"] = "知识清单"
                 st.rerun()
 
+
+def render_attention_list(classified: dict[str, list[dict[str, Any]]]) -> None:
     render_section_title("需要关注")
     attention_items = [
         ("已过期但未作废的知识", classified["expired"]),
@@ -510,6 +504,21 @@ def page_dashboard() -> None:
                 render_knowledge_list(items)
     if not has_attention:
         st.markdown('<div class="kg-empty">当前没有需要重点关注的知识治理事项。</div>', unsafe_allow_html=True)
+
+
+def page_dashboard() -> None:
+    render_page_header(
+        "知识库健康度仪表盘",
+        "集中观察过期、责任缺失、低置信度和即将失效的知识风险。",
+        "质量总览",
+    )
+    stats = get_dashboard_stats()
+    classified = get_alert_list()
+    config = load_config()
+    pending_verify_threshold = int(config.get("pending_verify_threshold", "0") or 0)
+    render_dashboard_alerts(stats, pending_verify_threshold)
+    render_dashboard_metrics(stats)
+    render_attention_list(classified)
 
 
 def page_knowledge_list() -> None:
@@ -593,8 +602,7 @@ def render_trust_form(item: dict[str, Any], prefix: str) -> None:
         st.rerun()
 
 
-def render_responsibility_detail(item: dict[str, Any], prefix: str) -> None:
-    render_knowledge_card(item)
+def render_responsibility_meta(item: dict[str, Any]) -> None:
     detail_col_1, detail_col_2, detail_col_3 = st.columns(3)
     detail_col_1.markdown(
         f"**创建者**  \n{item.get('creator') or '未指定'}  \n\n"
@@ -608,7 +616,9 @@ def render_responsibility_detail(item: dict[str, Any], prefix: str) -> None:
         f"**版本号**  \n{item.get('version') or '未指定'}  \n\n"
         f"**失效日期**  \n{item.get('expiry_date') or '长期有效'}"
     )
-    logs = item.get("modification_logs", [])
+
+
+def render_modification_logs(logs: list[dict[str, Any]]) -> None:
     with st.expander(f"修改日志（{len(logs)}）"):
         if logs:
             st.markdown('<div class="kg-timeline">', unsafe_allow_html=True)
@@ -626,8 +636,9 @@ def render_responsibility_detail(item: dict[str, Any], prefix: str) -> None:
         else:
             st.info("暂无修改日志。")
 
+
+def render_recent_references(references: list[dict[str, Any]]) -> None:
     render_section_title("最近引用记录")
-    references = item.get("recent_references") or []
     if references:
         for reference in references:
             st.markdown(
@@ -645,6 +656,8 @@ def render_responsibility_detail(item: dict[str, Any], prefix: str) -> None:
     else:
         st.info("暂无引用记录")
 
+
+def render_responsibility_actions(item: dict[str, Any], prefix: str) -> None:
     render_section_title("修正操作")
     action = st.radio("选择操作", ["作废", "更新", "修正信任度评级"], horizontal=True, key=f"{prefix}_action")
     if action == "作废":
@@ -665,6 +678,14 @@ def render_responsibility_detail(item: dict[str, Any], prefix: str) -> None:
         render_update_form(item, prefix)
     else:
         render_trust_form(item, prefix)
+
+
+def render_responsibility_detail(item: dict[str, Any], prefix: str) -> None:
+    render_knowledge_card(item)
+    render_responsibility_meta(item)
+    render_modification_logs(item.get("modification_logs", []))
+    render_recent_references(item.get("recent_references") or [])
+    render_responsibility_actions(item, prefix)
 
 
 def page_trace() -> None:
@@ -693,6 +714,191 @@ def page_trace() -> None:
                     render_responsibility_detail(detail, prefix)
 
 
+def render_badcase_board(badcase_stats: dict[str, Any]) -> None:
+    level_counter = badcase_stats["by_severity"]
+    knowledge_counter = badcase_stats["by_knowledge"]
+    st.metric("未处理Badcase数量", badcase_stats["pending_count"])
+    st.write("**按错误等级分布**")
+    if level_counter:
+        st.bar_chart(dict(level_counter), horizontal=True)
+    else:
+        st.caption("暂无错误等级数据")
+    st.write("**高频关联知识**")
+    if knowledge_counter:
+        st.bar_chart(dict(list(knowledge_counter.items())[:8]), horizontal=True)
+    else:
+        st.caption("暂无关联知识数据")
+
+
+def render_badcase_card(badcase: dict[str, Any]) -> None:
+    st.markdown(
+        f"""
+        <div class="kg-card">
+            <div class="kg-card-title">{escape(str(badcase.get('badcase_id')))}｜{escape(str(badcase.get('related_knowledge_id')))}</div>
+            <div>
+                {badge(badcase.get('status'), status_tone(badcase.get('status')))}
+                {badge(badcase.get('error_level'), 'amber')}
+                {badge(badcase.get('discovery_source'), 'blue')}
+            </div>
+            <div class="kg-card-meta">提报人：{escape(str(badcase.get('reporter') or '未指定'))}｜提交时间：{escape(str(badcase.get('submitted_at') or ''))}</div>
+            <div class="kg-card-body">{escape(str(badcase.get('description') or ''))}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_badcase_inline_fix_form(badcase: dict[str, Any], prefix: str, reviewer: str) -> None:
+    related_kid = badcase.get("related_knowledge_id", "")
+    related_knowledge = get_knowledge_by_kid(related_kid)
+    if related_knowledge is None:
+        st.error("未找到关联知识单元，无法修正。")
+        return
+
+    st.caption(f"关联知识ID：{related_kid}｜Badcase描述：{badcase.get('description')}")
+    with st.form(f"{prefix}_inline_fix_form"):
+        fixed_content = st.text_area("知识内容", value=related_knowledge.get("content", ""), height=160)
+        fixed_approver = st.text_input("审批人", value=related_knowledge.get("approver", ""))
+        fixed_trust = st.selectbox(
+            "信任度评级",
+            TRUST_RATINGS,
+            index=TRUST_RATINGS.index(related_knowledge.get("trust_rating"))
+            if related_knowledge.get("trust_rating") in TRUST_RATINGS
+            else 0,
+        )
+        has_expiry = st.checkbox(
+            "设置失效日期",
+            value=bool(related_knowledge.get("expiry_date")),
+            key=f"{prefix}_inline_has_expiry",
+        )
+        current_expiry = parse_date(related_knowledge.get("expiry_date")) or date.today()
+        fixed_expiry = st.date_input("失效日期", value=current_expiry, disabled=not has_expiry)
+        fixed = st.form_submit_button("确认修正", type="primary")
+
+    if not fixed:
+        return
+    badcase_no = badcase.get("badcase_id") or f"BC-{badcase.get('id')}"
+    update_knowledge(
+        related_kid,
+        {
+            "content": fixed_content.strip(),
+            "approver": fixed_approver.strip(),
+            "confidence": fixed_trust,
+            "expiry_date": fixed_expiry.isoformat() if has_expiry else "",
+            "modifier": reviewer.strip() or "未指定",
+            "changelog_summary": (
+                f"触发来源：Badcase回流，Badcase编号：{badcase_no}；"
+                f"错误描述：{badcase.get('description')}"
+            ),
+        },
+    )
+    export_to_sync_or_warn(related_kid)
+    update_badcase(
+        int(badcase.get("id")),
+        {
+            "status": "已修正",
+            "reviewer_note": reviewer.strip() or "未指定",
+            "resolved_at": now_iso(),
+        },
+    )
+    st.success("知识单元已修正，Badcase已标记为已修正。")
+    st.rerun()
+
+
+def render_badcase_submission_form(knowledge_options: list[str], labels: dict[str, str]) -> None:
+    with st.form("badcase_form", clear_on_submit=True):
+        related_id = st.selectbox(
+            "关联知识ID（搜索并自动关联）",
+            knowledge_options,
+            format_func=lambda value: labels.get(value, value),
+        )
+        description = st.text_area("错误描述", height=150, placeholder="描述错误表现、触发场景和影响范围。")
+        lower_col, right_col = st.columns(2)
+        with lower_col:
+            error_level = st.selectbox("错误等级", ERROR_LEVELS)
+            reporter = st.text_input("提报人")
+        with right_col:
+            discovery_source = st.selectbox("发现来源", DISCOVERY_SOURCES)
+        submitted = st.form_submit_button("提交Badcase", type="primary")
+    if not submitted:
+        return
+    if not related_id or not description.strip():
+        st.error("关联知识ID和错误描述不能为空。")
+        return
+    insert_badcase(
+        {
+            "related_knowledge_id": related_id,
+            "description": description.strip(),
+            "error_level": error_level,
+            "discovery_source": discovery_source,
+            "reporter": reporter.strip(),
+            "status": "待审核",
+        }
+    )
+    st.success("Badcase已提交。")
+    st.rerun()
+
+
+def render_badcase_rejection_form(badcase: dict[str, Any], prefix: str) -> None:
+    with st.form(f"{prefix}_reject_form"):
+        reviewer = st.text_input("审核人")
+        reason = st.text_area("驳回理由")
+        rejected = st.form_submit_button("确认驳回")
+    if not rejected:
+        return
+    note = f"{reviewer.strip() or '未指定'}：{reason.strip()}"
+    update_badcase(
+        int(badcase.get("id")),
+        {
+            "status": "已驳回",
+            "reviewer_note": note,
+            "resolved_at": now_iso(),
+        },
+    )
+    st.success("Badcase已驳回。")
+    st.rerun()
+
+
+def render_badcase_review_controls(badcase: dict[str, Any], prefix: str) -> None:
+    if badcase.get("status") != "待审核":
+        st.caption(f"审核人：{badcase.get('reviewer') or '未指定'}｜审核时间：{badcase.get('reviewed_at') or '无'}")
+        return
+    if st.button("审核", key=f"{prefix}_review_button"):
+        st.session_state[f"{prefix}_review"] = True
+    if not st.session_state.get(f"{prefix}_review"):
+        return
+    decision = st.radio(
+        "审核结论",
+        ["确认成立并修正", "驳回"],
+        horizontal=True,
+        key=f"{prefix}_decision",
+    )
+    if decision == "确认成立并修正":
+        reviewer = st.text_input("审核人", key=f"{prefix}_reviewer")
+        if st.button("确认并修正", key=f"{prefix}_confirm"):
+            st.session_state[f"{prefix}_show_fix_form"] = True
+        if st.session_state.get(f"{prefix}_show_fix_form"):
+            render_badcase_inline_fix_form(badcase, prefix, reviewer)
+    else:
+        render_badcase_rejection_form(badcase, prefix)
+
+
+def render_recent_badcases(badcases: list[dict[str, Any]]) -> None:
+    render_section_title("最近提交")
+    recent_badcases = sorted(badcases, key=lambda item: item.get("submitted_at", ""), reverse=True)
+    if not recent_badcases:
+        st.markdown('<div class="kg-empty">暂无Badcase记录。</div>', unsafe_allow_html=True)
+        return
+    for badcase in recent_badcases:
+        prefix = f"badcase_{badcase.get('badcase_id')}"
+        with st.expander(
+            f"{badcase.get('badcase_id')}｜{badcase.get('status')}｜"
+            f"{badcase.get('related_knowledge_id')}｜{badcase.get('error_level')}"
+        ):
+            render_badcase_card(badcase)
+            render_badcase_review_controls(badcase, prefix)
+
+
 def page_badcase() -> None:
     render_page_header(
         "Badcase回流",
@@ -709,178 +915,12 @@ def page_badcase() -> None:
 
     form_col, board_col = st.columns([1.12, 1])
     with form_col:
-        with st.form("badcase_form", clear_on_submit=True):
-            related_id = st.selectbox(
-                "关联知识ID（搜索并自动关联）",
-                knowledge_options,
-                format_func=lambda value: labels.get(value, value),
-            )
-            description = st.text_area("错误描述", height=150, placeholder="描述错误表现、触发场景和影响范围。")
-            lower_col, right_col = st.columns(2)
-            with lower_col:
-                error_level = st.selectbox("错误等级", ERROR_LEVELS)
-                reporter = st.text_input("提报人")
-            with right_col:
-                discovery_source = st.selectbox("发现来源", DISCOVERY_SOURCES)
-            submitted = st.form_submit_button("提交Badcase", type="primary")
-    if submitted:
-        if not related_id or not description.strip():
-            st.error("关联知识ID和错误描述不能为空。")
-        else:
-            insert_badcase(
-                {
-                    "related_knowledge_id": related_id,
-                    "description": description.strip(),
-                    "error_level": error_level,
-                    "discovery_source": discovery_source,
-                    "reporter": reporter.strip(),
-                    "status": "待审核",
-                }
-            )
-            st.success("Badcase已提交。")
-            st.rerun()
-
-    badcase_stats = get_badcase_stats()
-    level_counter = badcase_stats["by_severity"]
-    knowledge_counter = badcase_stats["by_knowledge"]
+        render_badcase_submission_form(knowledge_options, labels)
 
     with board_col:
-        st.metric("未处理Badcase数量", badcase_stats["pending_count"])
-        st.write("**按错误等级分布**")
-        if level_counter:
-            st.bar_chart(dict(level_counter), horizontal=True)
-        else:
-            st.caption("暂无错误等级数据")
-        st.write("**高频关联知识**")
-        if knowledge_counter:
-            st.bar_chart(dict(list(knowledge_counter.items())[:8]), horizontal=True)
-        else:
-            st.caption("暂无关联知识数据")
+        render_badcase_board(get_badcase_stats())
 
-    render_section_title("最近提交")
-    recent_badcases = sorted(badcases, key=lambda item: item.get("submitted_at", ""), reverse=True)
-    if not recent_badcases:
-        st.markdown('<div class="kg-empty">暂无Badcase记录。</div>', unsafe_allow_html=True)
-        return
-    for badcase in recent_badcases:
-        prefix = f"badcase_{badcase.get('badcase_id')}"
-        with st.expander(
-            f"{badcase.get('badcase_id')}｜{badcase.get('status')}｜"
-            f"{badcase.get('related_knowledge_id')}｜{badcase.get('error_level')}"
-        ):
-            st.markdown(
-                f"""
-                <div class="kg-card">
-                    <div class="kg-card-title">{escape(str(badcase.get('badcase_id')))}｜{escape(str(badcase.get('related_knowledge_id')))}</div>
-                    <div>
-                        {badge(badcase.get('status'), status_tone(badcase.get('status')))}
-                        {badge(badcase.get('error_level'), 'amber')}
-                        {badge(badcase.get('discovery_source'), 'blue')}
-                    </div>
-                    <div class="kg-card-meta">提报人：{escape(str(badcase.get('reporter') or '未指定'))}｜提交时间：{escape(str(badcase.get('submitted_at') or ''))}</div>
-                    <div class="kg-card-body">{escape(str(badcase.get('description') or ''))}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            if badcase.get("status") != "待审核":
-                st.caption(f"审核人：{badcase.get('reviewer') or '未指定'}｜审核时间：{badcase.get('reviewed_at') or '无'}")
-                continue
-            if st.button("审核", key=f"{prefix}_review_button"):
-                st.session_state[f"{prefix}_review"] = True
-            if st.session_state.get(f"{prefix}_review"):
-                decision = st.radio(
-                    "审核结论",
-                    ["确认成立并修正", "驳回"],
-                    horizontal=True,
-                    key=f"{prefix}_decision",
-                )
-                if decision == "确认成立并修正":
-                    reviewer = st.text_input("审核人", key=f"{prefix}_reviewer")
-                    if st.button("确认并修正", key=f"{prefix}_confirm"):
-                        st.session_state[f"{prefix}_show_fix_form"] = True
-                    if st.session_state.get(f"{prefix}_show_fix_form"):
-                        related_kid = badcase.get("related_knowledge_id", "")
-                        related_knowledge = get_knowledge_by_kid(related_kid)
-                        if related_knowledge is None:
-                            st.error("未找到关联知识单元，无法修正。")
-                        else:
-                            st.caption(
-                                f"关联知识ID：{related_kid}｜Badcase描述：{badcase.get('description')}"
-                            )
-                            with st.form(f"{prefix}_inline_fix_form"):
-                                fixed_content = st.text_area(
-                                    "知识内容",
-                                    value=related_knowledge.get("content", ""),
-                                    height=160,
-                                )
-                                fixed_approver = st.text_input(
-                                    "审批人",
-                                    value=related_knowledge.get("approver", ""),
-                                )
-                                fixed_trust = st.selectbox(
-                                    "信任度评级",
-                                    TRUST_RATINGS,
-                                    index=TRUST_RATINGS.index(related_knowledge.get("trust_rating"))
-                                    if related_knowledge.get("trust_rating") in TRUST_RATINGS
-                                    else 0,
-                                )
-                                has_expiry = st.checkbox(
-                                    "设置失效日期",
-                                    value=bool(related_knowledge.get("expiry_date")),
-                                    key=f"{prefix}_inline_has_expiry",
-                                )
-                                current_expiry = parse_date(related_knowledge.get("expiry_date")) or date.today()
-                                fixed_expiry = st.date_input(
-                                    "失效日期",
-                                    value=current_expiry,
-                                    disabled=not has_expiry,
-                                )
-                                fixed = st.form_submit_button("确认修正", type="primary")
-                            if fixed:
-                                badcase_no = badcase.get("badcase_id") or f"BC-{badcase.get('id')}"
-                                update_knowledge(
-                                    related_kid,
-                                    {
-                                        "content": fixed_content.strip(),
-                                        "approver": fixed_approver.strip(),
-                                        "confidence": fixed_trust,
-                                        "expiry_date": fixed_expiry.isoformat() if has_expiry else "",
-                                        "modifier": reviewer.strip() or "未指定",
-                                        "changelog_summary": (
-                                            f"触发来源：Badcase回流，Badcase编号：{badcase_no}；"
-                                            f"错误描述：{badcase.get('description')}"
-                                        ),
-                                    },
-                                )
-                                export_to_sync_or_warn(related_kid)
-                                update_badcase(
-                                    int(badcase.get("id")),
-                                    {
-                                        "status": "已修正",
-                                        "reviewer_note": reviewer.strip() or "未指定",
-                                        "resolved_at": now_iso(),
-                                    },
-                                )
-                                st.success("知识单元已修正，Badcase已标记为已修正。")
-                                st.rerun()
-                else:
-                    with st.form(f"{prefix}_reject_form"):
-                        reviewer = st.text_input("审核人")
-                        reason = st.text_area("驳回理由")
-                        rejected = st.form_submit_button("确认驳回")
-                    if rejected:
-                        note = f"{reviewer.strip() or '未指定'}：{reason.strip()}"
-                        update_badcase(
-                            int(badcase.get("id")),
-                            {
-                                "status": "已驳回",
-                                "reviewer_note": note,
-                                "resolved_at": now_iso(),
-                            },
-                        )
-                        st.success("Badcase已驳回。")
-                        st.rerun()
+    render_recent_badcases(badcases)
 
 
 def page_home() -> None:

@@ -18,7 +18,7 @@ python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Windows 本地也可以直接双击 `KnowledgeGovernanceConsole.exe`，或双击 `start_knowledge_console.bat`。exe 会读取 `config.yaml` 中的 `launch_host` 和 `launch_port`，如果端口被占用会自动尝试后续端口；启动记录会写入 `launcher.log` 便于排查。
+Windows 本地也可以直接双击 `KnowledgeGovernanceConsole.exe`，或双击 `start_knowledge_console.bat`。exe 会读取 `config.yaml` 中的 `launch_host`、`launch_port` 和 `launch_timeout_seconds`，如果端口被占用会自动尝试后续端口；启动记录会写入 `launcher.log` 便于排查。
 
 默认数据库文件：
 
