@@ -27,7 +27,8 @@ def write_temp_config() -> None:
         "pending_verify_threshold: 0\n"
         "sync_dir: sync\n"
         "launch_host: 127.0.0.1\n"
-        "launch_port: 8501\n",
+        "launch_port: 8501\n"
+        "launch_timeout_seconds: 30\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -80,12 +81,16 @@ def main() -> int:
                 }
             )
 
+            legacy_path = Path("sync") / f"{kid}.md"
+            legacy_path.parent.mkdir(parents=True, exist_ok=True)
+            legacy_path.write_text("# legacy markdown\n", encoding="utf-8", newline="\n")
             yaml_path = export_to_sync(kid)
             yaml_text = yaml_path.read_text(encoding="utf-8")
             payload = yaml.safe_load(yaml_text)
             check("yaml kid", payload["kid"] == kid)
             check("yaml expiry", payload["expiry_date"] == "2099-12-31")
             check("yaml literal block", "content: |" in yaml_text)
+            check("legacy markdown cleaned on export", not legacy_path.exists())
 
             update_knowledge(kid, {"content": "更新后内容", "modifier": "自检", "changelog_summary": "自检更新"})
             updated = get_knowledge_by_kid(kid)
@@ -115,7 +120,9 @@ def main() -> int:
 
             check("export all active", export_all_active() >= 2)
             mark_deprecated(kid)
+            legacy_path.write_text("# legacy markdown\n", encoding="utf-8", newline="\n")
             check("deprecated sync removed", remove_sync_file(kid) is True)
+            check("legacy markdown removed", not legacy_path.exists())
 
             dashboard_stats = get_dashboard_stats()
             sync_stats = get_sync_stats()

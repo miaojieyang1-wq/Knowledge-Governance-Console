@@ -19,6 +19,12 @@ def _get_sync_dir() -> Path:
     return Path(config.get("sync_dir", "sync"))
 
 
+def _remove_legacy_markdown(sync_dir: Path, kid: str) -> None:
+    legacy_path = sync_dir / f"{kid}.md"
+    if legacy_path.exists():
+        legacy_path.unlink()
+
+
 def _dump_yaml(payload: dict[str, Any]) -> str:
     try:
         import yaml
@@ -86,6 +92,7 @@ def export_to_sync(kid: str) -> Path:
     yaml_text = _dump_yaml(_to_yaml_payload(item))
     with output_path.open("w", encoding="utf-8", newline="\n") as file_obj:
         file_obj.write(yaml_text)
+    _remove_legacy_markdown(sync_dir, kid)
     return output_path
 
 
@@ -101,12 +108,18 @@ def export_all_active() -> int:
 
 
 def remove_sync_file(kid: str) -> bool:
-    """Remove sync/<kid>.yaml if it exists."""
-    output_path = _get_sync_dir() / f"{kid}.yaml"
+    """Remove sync/<kid>.yaml and any legacy Markdown export if they exist."""
+    sync_dir = _get_sync_dir()
+    output_path = sync_dir / f"{kid}.yaml"
+    removed = False
     if output_path.exists():
         output_path.unlink()
-        return True
-    return False
+        removed = True
+    legacy_path = sync_dir / f"{kid}.md"
+    if legacy_path.exists():
+        legacy_path.unlink()
+        removed = True
+    return removed
 
 
 def get_sync_stats() -> dict[str, Any]:

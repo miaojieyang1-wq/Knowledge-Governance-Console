@@ -15,3 +15,4 @@
 - Split dense Streamlit page handlers into smaller rendering helpers for safer UI iteration.
 - Added `docs/decisions.md` to document the console, SQLite, YAML sync, and Windows launcher boundaries.
 - Made the Windows launcher startup wait timeout configurable through `config.yaml`.
+- Cleaned same-ID legacy Markdown sync files when exporting or removing YAML sync files.
