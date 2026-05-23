@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from html import escape
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
@@ -19,11 +20,11 @@ from utils import (
     init_db,
     insert_badcase,
     insert_knowledge,
-    load_config,
     mark_deprecated,
     update_badcase,
     update_knowledge,
     generate_kid,
+    get_config_int,
 )
 from synchronizer import export_all_active, export_to_sync, get_sync_stats, remove_sync_file
 
@@ -45,247 +46,13 @@ LOCAL_TZ = timezone(timedelta(hours=8))
 
 
 def apply_theme() -> None:
-    st.markdown(
-        """
-        <style>
-        :root {
-            --kg-bg: #f6f7f9;
-            --kg-panel: #ffffff;
-            --kg-border: #dde3ea;
-            --kg-muted: #64748b;
-            --kg-text: #172033;
-            --kg-blue: #2563eb;
-            --kg-green: #15803d;
-            --kg-amber: #b45309;
-            --kg-red: #b91c1c;
-            --kg-slate: #334155;
-        }
-        .stApp {
-            background: linear-gradient(180deg, #f7f9fc 0%, #f3f5f8 42%, #f6f7f9 100%);
-            color: var(--kg-text);
-        }
-        [data-testid="stSidebar"] {
-            background: #ffffff;
-            border-right: 1px solid var(--kg-border);
-        }
-        [data-testid="stSidebar"] [role="radiogroup"] label {
-            border-radius: 8px;
-            padding: 0.32rem 0.45rem;
-        }
-        [data-testid="stSidebar"] [role="radiogroup"] label:hover {
-            background: #f1f5f9;
-        }
-        .block-container {
-            padding-top: 2rem;
-            padding-bottom: 3rem;
-            max-width: 1320px;
-        }
-        h1, h2, h3 {
-            letter-spacing: 0;
-        }
-        div[data-testid="stMetric"] {
-            background: var(--kg-panel);
-            border: 1px solid var(--kg-border);
-            border-radius: 8px;
-            padding: 1rem 1rem 0.85rem;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-        }
-        div[data-testid="stMetric"] label {
-            color: var(--kg-muted);
-        }
-        div[data-testid="stMetricValue"] {
-            color: var(--kg-text);
-            font-weight: 720;
-        }
-        .kg-hero {
-            background: #ffffff;
-            border: 1px solid var(--kg-border);
-            border-radius: 8px;
-            padding: 1.25rem 1.35rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.045);
-        }
-        .kg-eyebrow {
-            color: var(--kg-blue);
-            font-size: 0.78rem;
-            font-weight: 700;
-            margin-bottom: 0.25rem;
-        }
-        .kg-hero h1 {
-            font-size: 1.72rem;
-            line-height: 1.25;
-            margin: 0;
-        }
-        .kg-hero p {
-            color: var(--kg-muted);
-            margin: 0.42rem 0 0;
-            line-height: 1.65;
-        }
-        .kg-section-title {
-            font-size: 1.08rem;
-            font-weight: 720;
-            margin: 1.1rem 0 0.55rem;
-        }
-        .kg-card {
-            background: #ffffff;
-            border: 1px solid var(--kg-border);
-            border-radius: 8px;
-            padding: 0.92rem 1rem;
-            margin-bottom: 0.72rem;
-            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.035);
-        }
-        .kg-card-title {
-            font-size: 1rem;
-            font-weight: 720;
-            margin-bottom: 0.35rem;
-        }
-        .kg-card-meta {
-            color: var(--kg-muted);
-            font-size: 0.84rem;
-            line-height: 1.75;
-        }
-        .kg-card-body {
-            color: #334155;
-            font-size: 0.9rem;
-            line-height: 1.7;
-            margin-top: 0.55rem;
-        }
-        .kg-badge {
-            display: inline-block;
-            border-radius: 999px;
-            padding: 0.16rem 0.48rem;
-            font-size: 0.76rem;
-            font-weight: 650;
-            margin-right: 0.28rem;
-            border: 1px solid transparent;
-            white-space: nowrap;
-        }
-        .kg-badge-green {
-            color: var(--kg-green);
-            background: #ecfdf3;
-            border-color: #bbf7d0;
-        }
-        .kg-badge-amber {
-            color: var(--kg-amber);
-            background: #fffbeb;
-            border-color: #fde68a;
-        }
-        .kg-badge-red {
-            color: var(--kg-red);
-            background: #fef2f2;
-            border-color: #fecaca;
-        }
-        .kg-badge-blue {
-            color: var(--kg-blue);
-            background: #eff6ff;
-            border-color: #bfdbfe;
-        }
-        .kg-badge-slate {
-            color: var(--kg-slate);
-            background: #f1f5f9;
-            border-color: #cbd5e1;
-        }
-        .kg-empty {
-            background: #ffffff;
-            border: 1px dashed #cbd5e1;
-            border-radius: 8px;
-            padding: 1.2rem;
-            color: var(--kg-muted);
-            text-align: center;
-        }
-        .kg-alert {
-            border-radius: 8px;
-            padding: 0.72rem 0.9rem;
-            margin-bottom: 0.6rem;
-            border: 1px solid transparent;
-            font-weight: 650;
-        }
-        .kg-alert-red {
-            color: #991b1b;
-            background: #fef2f2;
-            border-color: #fecaca;
-        }
-        .kg-alert-amber {
-            color: #92400e;
-            background: #fffbeb;
-            border-color: #fde68a;
-        }
-        .kg-alert-blue {
-            color: #1d4ed8;
-            background: #eff6ff;
-            border-color: #bfdbfe;
-        }
-        .kg-flow {
-            background: #ffffff;
-            border: 1px solid var(--kg-border);
-            border-radius: 8px;
-            padding: 1.05rem;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.035);
-        }
-        .kg-flow-line {
-            font-family: Consolas, "Courier New", monospace;
-            white-space: pre;
-            overflow-x: auto;
-            color: var(--kg-text);
-            line-height: 1.65;
-            margin-bottom: 0.9rem;
-        }
-        .kg-flow-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 0.6rem;
-        }
-        .kg-flow-node {
-            border: 1px solid var(--kg-border);
-            border-radius: 8px;
-            padding: 0.72rem;
-            background: #f8fafc;
-        }
-        .kg-flow-node strong {
-            display: block;
-            margin-bottom: 0.28rem;
-        }
-        .kg-flow-node span {
-            color: var(--kg-muted);
-            font-size: 0.86rem;
-            line-height: 1.55;
-        }
-        .kg-timeline {
-            border-left: 2px solid #dbeafe;
-            padding-left: 0.85rem;
-            margin: 0.35rem 0 0.8rem 0.2rem;
-        }
-        .kg-timeline-item {
-            margin-bottom: 0.7rem;
-            color: #334155;
-            line-height: 1.55;
-        }
-        .kg-timeline-time {
-            color: var(--kg-muted);
-            font-size: 0.8rem;
-        }
-        div[data-testid="stForm"] {
-            background: #ffffff;
-            border: 1px solid var(--kg-border);
-            border-radius: 8px;
-            padding: 1rem 1rem 0.75rem;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.035);
-        }
-        .stButton > button, .stDownloadButton > button, div[data-testid="stFormSubmitButton"] button {
-            border-radius: 7px;
-            font-weight: 650;
-        }
-        div[data-testid="stExpander"] {
-            border: 1px solid var(--kg-border);
-            border-radius: 8px;
-            background: #ffffff;
-            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.03);
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
+    style_path = Path(__file__).resolve().parent / "static" / "knowledge_console.css"
+    try:
+        css = style_path.read_text(encoding="utf-8")
+    except OSError:
+        st.warning("??????????????Streamlit?????")
+        return
+    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 def render_page_header(title: str, subtitle: str, eyebrow: str = "知识治理") -> None:
     st.markdown(
@@ -514,8 +281,7 @@ def page_dashboard() -> None:
     )
     stats = get_dashboard_stats()
     classified = get_alert_list()
-    config = load_config()
-    pending_verify_threshold = int(config.get("pending_verify_threshold", "0") or 0)
+    pending_verify_threshold = get_config_int("pending_verify_threshold", 0)
     render_dashboard_alerts(stats, pending_verify_threshold)
     render_dashboard_metrics(stats)
     render_attention_list(classified)

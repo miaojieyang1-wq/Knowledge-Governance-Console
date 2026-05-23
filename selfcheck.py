@@ -40,6 +40,7 @@ def main() -> int:
     from utils import (
         get_badcase_list,
         get_badcase_stats,
+        get_config_int,
         get_dashboard_stats,
         get_knowledge_by_kid,
         get_recent_references,
@@ -139,6 +140,16 @@ def main() -> int:
             sync_stats = get_sync_stats()
             check("dashboard total", dashboard_stats["total"] == 2)
             check("sync stats", sync_stats["file_count"] >= 1)
+
+            Path("config.yaml").write_text(
+                "data_dir: data\n"
+                "database_file: knowledge_base.db\n"
+                "pending_verify_threshold: invalid\n"
+                "sync_dir: sync\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            check("invalid int config fallback", get_config_int("pending_verify_threshold", 7) == 7)
             print("[OK] selfcheck complete")
             return 0
         finally:

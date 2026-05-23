@@ -17,3 +17,5 @@
 - Made the Windows launcher startup wait timeout configurable through `config.yaml`.
 - Cleaned same-ID legacy Markdown sync files when exporting or removing YAML sync files.
 - Preserved the quick trust-rating correction behavior so it logs the change without bumping the knowledge version.
+- Added safe integer config parsing so invalid dashboard thresholds fall back gracefully.
+- Moved Streamlit styling into `static/knowledge_console.css` to keep the app entrypoint easier to maintain.

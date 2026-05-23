@@ -84,6 +84,16 @@ def load_config() -> dict[str, str]:
     return config
 
 
+def get_config_int(key: str, default: int) -> int:
+    config = load_config()
+    raw_value = config.get(key, str(default)) or str(default)
+    try:
+        return int(raw_value)
+    except ValueError:
+        LOGGER.warning("Invalid integer config value for %s: %s. Fallback to %s.", key, raw_value, default)
+        return default
+
+
 def get_database_path() -> Path:
     config = load_config()
     data_dir = Path(config.get("data_dir", DEFAULT_DATA_DIR))
