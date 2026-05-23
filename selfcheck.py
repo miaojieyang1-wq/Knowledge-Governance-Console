@@ -37,6 +37,7 @@ def write_temp_config() -> None:
 
 def main() -> int:
     sys.path.insert(0, str(PROJECT_ROOT))
+    from exe_launcher import read_simple_config
     from synchronizer import export_all_active, export_to_sync, get_sync_stats, remove_sync_file
     from utils import (
         get_badcase_list,
@@ -161,6 +162,11 @@ def main() -> int:
                 check("env config override", load_config()["sync_dir"] == "env_sync")
             finally:
                 os.environ.pop("KG_SYNC_DIR", None)
+            os.environ["KG_LAUNCH_PORT"] = "8765"
+            try:
+                check("launcher env config override", read_simple_config(Path.cwd())["launch_port"] == "8765")
+            finally:
+                os.environ.pop("KG_LAUNCH_PORT", None)
             print("[OK] selfcheck complete")
             return 0
         finally:

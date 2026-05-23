@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 import webbrowser
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -16,6 +17,11 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8501
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 30
 ERROR_EXIT_DELAY_SECONDS = 12
+CONFIG_ENV_KEYS = {
+    "launch_host": "KG_LAUNCH_HOST",
+    "launch_port": "KG_LAUNCH_PORT",
+    "launch_timeout_seconds": "KG_LAUNCH_TIMEOUT_SECONDS",
+}
 
 
 def write_log(root: Path, message: str) -> None:
@@ -55,6 +61,7 @@ def read_simple_config(root: Path) -> dict[str, str]:
             continue
         key, value = line.split(":", 1)
         config[key.strip()] = value.strip().strip("\"'")
+    config.update({key: os.environ[env_key] for key, env_key in CONFIG_ENV_KEYS.items() if os.environ.get(env_key)})
     return config
 
 

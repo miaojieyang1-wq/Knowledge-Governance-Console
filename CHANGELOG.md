@@ -25,3 +25,4 @@
 - Normalized batch scripts to LF in Git attributes to match the project encoding rules.
 - Added environment-variable overrides for runtime configuration while preserving `config.yaml` defaults.
 - Added a Git line-ending rule for `.env.example`.
+- Added environment-variable overrides to the Windows launcher and covered them in selfcheck.
