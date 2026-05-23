@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import logging
 from pathlib import Path
 
 import yaml
@@ -149,7 +150,11 @@ def main() -> int:
                 encoding="utf-8",
                 newline="\n",
             )
-            check("invalid int config fallback", get_config_int("pending_verify_threshold", 7) == 7)
+            logging.getLogger("utils").disabled = True
+            try:
+                check("invalid int config fallback", get_config_int("pending_verify_threshold", 7) == 7)
+            finally:
+                logging.getLogger("utils").disabled = False
             print("[OK] selfcheck complete")
             return 0
         finally:
