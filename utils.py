@@ -75,6 +75,10 @@ def load_config() -> dict[str, str]:
         "data_dir": DEFAULT_DATA_DIR,
         "database_file": DEFAULT_DB_FILE,
         "pending_verify_threshold": "0",
+        "sync_dir": "sync",
+        "launch_host": "127.0.0.1",
+        "launch_port": "8501",
+        "launch_timeout_seconds": "30",
     }
     config.update({key: value for key, value in _read_simple_yaml(Path(DEFAULT_CONFIG_FILE)).items() if value})
     return config
@@ -407,6 +411,7 @@ def update_knowledge(kid: str, updates: dict[str, Any]) -> None:
     allowed_updates = {key: value for key, value in updates.items() if key in KNOWLEDGE_COLUMNS - {"kid", "created_at", "changelog"}}
     modifier = str(updates.get("modifier", "系统"))
     summary = str(updates.get("changelog_summary") or "更新知识字段")
+    increment_version = updates.get("increment_version", True) is not False
     with _connect() as connection:
         row = connection.execute("SELECT * FROM knowledge_units WHERE kid = ?", (kid,)).fetchone()
         if not row:
@@ -420,7 +425,8 @@ def update_knowledge(kid: str, updates: dict[str, Any]) -> None:
                 {"changed_fields": sorted(allowed_updates.keys())},
             )
         )
-        allowed_updates["version"] = _increment_version(str(current.get("version", "1.0")))
+        if increment_version:
+            allowed_updates["version"] = _increment_version(str(current.get("version", "1.0")))
         allowed_updates["updated_at"] = now_iso()
         allowed_updates["changelog"] = json.dumps(changelog, ensure_ascii=False)
         set_sql = ", ".join(f"{key} = ?" for key in allowed_updates)

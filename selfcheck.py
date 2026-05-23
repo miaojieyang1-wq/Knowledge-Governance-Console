@@ -96,6 +96,17 @@ def main() -> int:
             updated = get_knowledge_by_kid(kid)
             check("version increments", updated is not None and updated["version"] == "1.1")
             check("changelog appended", updated["modification_logs"][-1]["summary"] == "自检更新")
+            update_knowledge(
+                kid,
+                {
+                    "confidence": "中置信度单方面来源",
+                    "modifier": "自检",
+                    "changelog_summary": "自检信任度修正",
+                    "increment_version": False,
+                },
+            )
+            trust_updated = get_knowledge_by_kid(kid)
+            check("trust fix keeps version", trust_updated is not None and trust_updated["version"] == "1.1")
 
             log_reference(kid, "REPORT-SELF-CHECK", "手动测试")
             check("reference logged", get_knowledge_by_kid(kid)["recent_references"][0]["report_id"] == "REPORT-SELF-CHECK")

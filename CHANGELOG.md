@@ -16,3 +16,4 @@
 - Added `docs/decisions.md` to document the console, SQLite, YAML sync, and Windows launcher boundaries.
 - Made the Windows launcher startup wait timeout configurable through `config.yaml`.
 - Cleaned same-ID legacy Markdown sync files when exporting or removing YAML sync files.
+- Preserved the quick trust-rating correction behavior so it logs the change without bumping the knowledge version.

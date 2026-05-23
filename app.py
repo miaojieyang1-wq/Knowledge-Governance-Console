@@ -595,6 +595,7 @@ def render_trust_form(item: dict[str, Any], prefix: str) -> None:
                 "confidence": new_trust,
                 "modifier": modifier,
                 "changelog_summary": f"信任度评级由“{old_trust}”修正为“{new_trust}”",
+                "increment_version": False,
             },
         )
         export_to_sync_or_warn(item.get("kid") or item.get("knowledge_id", ""))
