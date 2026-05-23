@@ -6,6 +6,6 @@
 *.txt text eol=lf
 *.json text eol=lf
 *.css text eol=lf
-*.bat text eol=crlf
+*.bat text eol=lf
 *.db binary
 *.exe binary
