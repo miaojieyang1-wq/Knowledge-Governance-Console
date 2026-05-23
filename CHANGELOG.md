@@ -20,3 +20,4 @@
 - Added safe integer config parsing so invalid dashboard thresholds fall back gracefully.
 - Moved Streamlit styling into `static/knowledge_console.css` to keep the app entrypoint easier to maintain.
 - Added Git line-ending rules for CSS assets.
+- Added a Git line-ending rule for `.gitattributes` itself.
