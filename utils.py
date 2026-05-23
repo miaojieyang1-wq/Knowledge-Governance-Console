@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -47,6 +48,15 @@ BADCASE_COLUMNS = {
     "created_at",
     "resolved_at",
 }
+CONFIG_ENV_KEYS = {
+    "data_dir": "KG_DATA_DIR",
+    "database_file": "KG_DATABASE_FILE",
+    "pending_verify_threshold": "KG_PENDING_VERIFY_THRESHOLD",
+    "sync_dir": "KG_SYNC_DIR",
+    "launch_host": "KG_LAUNCH_HOST",
+    "launch_port": "KG_LAUNCH_PORT",
+    "launch_timeout_seconds": "KG_LAUNCH_TIMEOUT_SECONDS",
+}
 
 
 def now_iso() -> str:
@@ -81,6 +91,7 @@ def load_config() -> dict[str, str]:
         "launch_timeout_seconds": "30",
     }
     config.update({key: value for key, value in _read_simple_yaml(Path(DEFAULT_CONFIG_FILE)).items() if value})
+    config.update({key: os.environ[env_key] for key, env_key in CONFIG_ENV_KEYS.items() if os.environ.get(env_key)})
     return config
 
 

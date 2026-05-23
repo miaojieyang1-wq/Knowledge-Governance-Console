@@ -52,6 +52,7 @@ def main() -> int:
         mark_deprecated,
         update_badcase,
         update_knowledge,
+        load_config,
     )
 
     with tempfile.TemporaryDirectory(prefix="kg_console_selfcheck_", ignore_cleanup_errors=True) as temp_dir:
@@ -155,6 +156,11 @@ def main() -> int:
                 check("invalid int config fallback", get_config_int("pending_verify_threshold", 7) == 7)
             finally:
                 logging.getLogger("utils").disabled = False
+            os.environ["KG_SYNC_DIR"] = "env_sync"
+            try:
+                check("env config override", load_config()["sync_dir"] == "env_sync")
+            finally:
+                os.environ.pop("KG_SYNC_DIR", None)
             print("[OK] selfcheck complete")
             return 0
         finally:

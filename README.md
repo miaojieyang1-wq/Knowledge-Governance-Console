@@ -26,6 +26,8 @@ Windows 本地也可以直接双击 `KnowledgeGovernanceConsole.exe`，或双击
 
 可在 `config.yaml` 中调整数据目录、数据库文件名和待验证告警阈值。
 
+同名环境变量会覆盖 `config.yaml`：`KG_DATA_DIR`、`KG_DATABASE_FILE`、`KG_PENDING_VERIFY_THRESHOLD`、`KG_SYNC_DIR`、`KG_LAUNCH_HOST`、`KG_LAUNCH_PORT`、`KG_LAUNCH_TIMEOUT_SECONDS`。
+
 ## 同步转译
 
 控制台只负责将 SQLite 中的结构化知识单元转译为 YAML 文件，不调用 ChromaDB，也不修改 Agent 代码。下游 Agent 的索引脚本可扫描 `sync/` 文件夹中的 `.yaml` 文件并自行完成向量化。

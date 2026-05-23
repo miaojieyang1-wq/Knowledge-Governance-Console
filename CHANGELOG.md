@@ -23,3 +23,4 @@
 - Added a Git line-ending rule for `.gitattributes` itself.
 - Aligned `start_knowledge_console.bat` with the Python launcher so bat and exe startup share config and port fallback behavior.
 - Normalized batch scripts to LF in Git attributes to match the project encoding rules.
+- Added environment-variable overrides for runtime configuration while preserving `config.yaml` defaults.
